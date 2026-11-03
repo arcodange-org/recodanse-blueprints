@@ -1,0 +1,11 @@
+# Ce que tofu fabrique — jamais versionné.
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+plan.*
+crash.log
+# Le miroir local du fournisseur, le cache des fournisseurs et la configuration
+# du CLI générée (scripts/tester.sh) : propres à la machine.
+.outils/

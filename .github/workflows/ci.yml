@@ -1,0 +1,37 @@
+# La CI publique (GitHub). La CI de référence est celle de la forge
+# (.gitea/workflows/ci.yml). Le fournisseur se construit depuis son dépôt public,
+# pour que les modules soient éprouvés contre la tête de sa branche principale.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tester:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: arcodange-org/terraform-provider-recodanse
+          ref: main
+          path: .fournisseur
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .fournisseur/go.mod
+          cache-dependency-path: .fournisseur/go.sum
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.10.5
+          tofu_wrapper: false
+      - name: Construire le miroir, puis fmt, validate et test de chaque module
+        env:
+          FOURNISSEUR_SRC: ${{ github.workspace }}/.fournisseur
+          FOURNISSEUR_VERSION: 0.2.0
+        run: scripts/tester.sh

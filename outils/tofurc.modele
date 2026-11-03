@@ -1,0 +1,21 @@
+# La configuration du CLI de tofu PROPRE À CE DÉPÔT — jamais ~/.terraformrc.
+# scripts/tester.sh la recopie dans .outils/tofurc en remplaçant @MIROIR@ et
+# @CACHE@ par des chemins absolus, puis exporte TF_CLI_CONFIG_FILE vers elle.
+#
+# Tant que le fournisseur ReCoDanse n'est pas publié sur un registre (ou pour
+# essayer une de ses branches), il vient d'un MIROIR LOCAL construit depuis son dépôt. Les
+# autres fournisseurs (hashicorp/time, hashicorp/vault) viennent du registre
+# d'OpenTofu, mis en cache dans .outils/cache.
+
+provider_installation {
+  filesystem_mirror {
+    path    = "@MIROIR@"
+    include = ["registry.opentofu.org/arcodange-org/recodanse", "registry.terraform.io/arcodange-org/recodanse"]
+  }
+
+  direct {
+    exclude = ["registry.opentofu.org/arcodange-org/recodanse", "registry.terraform.io/arcodange-org/recodanse"]
+  }
+}
+
+plugin_cache_dir = "@CACHE@"

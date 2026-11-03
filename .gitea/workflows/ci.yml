@@ -1,0 +1,77 @@
+# Rejoue scripts/tester.sh : le miroir du fournisseur, tofu fmt, puis init,
+# validate et test (fournisseurs simulés) de chaque module, init et validate de
+# chaque exemple. Aucun jeton ReCoDanse : rien ne parle à une API.
+#
+# Le fournisseur se lit dans son dépôt privé de la même organisation, par une clé
+# de déploiement en lecture seule (secret LECTURE_FOURNISSEUR_SSH, posé par
+# arcodange-org/factory) : voir le pas « Lire le fournisseur ».
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tester:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # Le fournisseur vit dans un dépôt PRIVÉ voisin : le jeton du job ne le lit pas
+      # (« Repository not found »). Il se lit par une clé de déploiement EN
+      # LECTURE SEULE, écrite en IaC (arcodange-org/factory,
+      # iac/gitea_deploy_keys_recodanse_iac.tf), par SSH, clé d'hôte épinglée. La clé
+      # vit dans un dossier 0700 le temps du clone, puis s'efface ; elle ne s'imprime
+      # jamais. Sans le secret, le pas le DIT et sort 2 : jamais un vert muet.
+      - name: Lire le fournisseur (clé de déploiement, lecture seule)
+        env:
+          CLE: ${{ secrets.LECTURE_FOURNISSEUR_SSH }}
+          HOTES_CONNUS: "[192.168.1.202]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID5f65xCDwA4DQ460OpW6JO7pEkXtef+Z2EQFDfDQrwn"
+        run: |
+          if [ -z "$CLE" ]; then
+            echo "::error::secret LECTURE_FOURNISSEUR_SSH absent — le fournisseur (dépôt privé) ne se lit pas (factory/iac/gitea_deploy_keys_recodanse_iac.tf)"
+            exit 2
+          fi
+          D="$(mktemp -d)"; chmod 700 "$D"
+          printf '%s\n' "$CLE" > "$D/cle"; chmod 600 "$D/cle"
+          printf '%s\n' "$HOTES_CONNUS" > "$D/hotes"
+          # `bash -e` : le statut se capture par `if`, sinon un clone raté sortirait avant d'effacer la clé.
+          S=0
+          if ! GIT_SSH_COMMAND="ssh -i $D/cle -o IdentitiesOnly=yes -o UserKnownHostsFile=$D/hotes -o StrictHostKeyChecking=yes" \
+            git clone --depth 1 --branch main ssh://git@192.168.1.202:2222/arcodange-org/terraform-provider-recodanse.git .fournisseur; then
+            S=1
+          fi
+          rm -rf "$D"
+          [ "$S" -eq 0 ] || { echo "::error::le clone du fournisseur par SSH a échoué"; exit 1; }
+          echo "· fournisseur lu à $(git -C .fournisseur rev-parse --short HEAD)"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .fournisseur/go.mod
+          cache-dependency-path: .fournisseur/go.sum
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.10.5
+          tofu_wrapper: false
+
+      - name: Construire le miroir, puis fmt, validate et test de chaque module
+        env:
+          FOURNISSEUR_SRC: ${{ github.workspace }}/.fournisseur
+        run: scripts/tester.sh
+
+      # @v3, pas @v4 : Gitea Actions refuse @actions/artifact v2+ (GHESNotSupportedError,
+      # relevé sur Gitea Actions). actionlint le signale ; scripts/lint-workflows.sh
+      # ignore CE message seulement. Sur GitHub, ce serait @v4.
+      - name: Garder les journaux (même au rouge)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: journaux-tofu
+          path: .outils/journaux/
